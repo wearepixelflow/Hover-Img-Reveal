@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Floating Image Reveal — Premium Typography</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    :root {
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background: #04040a;
+      overflow: hidden;
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      cursor: none;
+      user-select: none;
+    }
+    /* ── Grain canvas ── */
+    #canvas-grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: .7;
+    }
+    /* ── WebGL canvas (chromatic aberration) ── */
+    #canvas-gl {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 15;
+      opacity: 0;
+      transition: opacity .4s ease;
+      mix-blend-mode: screen;
+    }
+    #canvas-gl.active {
+      opacity: 1;
+    }
+    /* ── Aurora ── */
+    #aurora {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .aurora-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(110px);
+      animation: drift linear infinite;
+    }
+    @keyframes drift {
+      0% {
+        transform: translate(0, 0) rotate(0deg) scale(1);
+      }
+      33% {
+        transform: translate(30px, -20px) rotate(120deg) scale(1.05);
+      }
+      66% {
+        transform: translate(-20px, 35px) rotate(240deg) scale(.95);
+      }
+      100% {
+        transform: translate(0, 0) rotate(360deg) scale(1);
+      }
+    }
+    /* ── Radial glow ── */
+    #glow {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: radial-gradient(ellipse 65% 45% at 50% 52%, rgba(90, 60, 160, .16) 0%, transparent 70%);
+      animation: glowPulse 8s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: .6;
+      }
+    }
+    /* ── Scene ── */
+    #scene {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 2;
+      perspective: 1200px;
+    }
+    /* ── Word wrapper (for scroll transitions) ── */
+    #word-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transform-style: preserve-3d;
+      will-change: transform;
+    }
+    .word-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: .86;
+      margin: -2px 0;
+      overflow: visible;
+    }
+    .letter {
+      display: inline-block;
+      font-size: clamp(64px, 12vw, 148px);
+      font-weight: 900;
+      letter-spacing: -.035em;
+      color: transparent;
+      background: linear-gradient(145deg,
+          #e8e8e8 0%,
+          #9a9a9a 30%,
+          #d8d8d8 55%,
+          #707070 80%,
+          #c0c0c0 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      position: relative;
+      cursor: none;
+      will-change: transform, filter;
+      transition:
+        color .3s ease,
+        filter .25s ease;
+      transform-origin: center bottom;
+    }
+    /* ── Counter / label bar ── */
+    #label-bar {
+      position: fixed;
+      bottom: 36px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 0 48px;
+      z-index: 8;
+      pointer-events: none;
+    }
+    .label-item {
+      font-size: 10px;
+      letter-spacing: .22em;
+      color: rgba(255, 255, 255, .22);
+      text-transform: uppercase;
+      font-weight: 500;
+      transition: color .4s ease;
+    }
+    .label-item.active {
+      color: rgba(255, 255, 255, .55);
+    }
+    #word-counter {
+      position: fixed;
+      top: 36px;
+      right: 48px;
+      font-size: 11px;
+      letter-spacing: .18em;
+      color: rgba(255, 255, 255, .2);
+      z-index: 8;
+      pointer-events: none;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+    #word-name {
+      position: fixed;
+      top: 36px;
+      left: 48px;
+      font-size: 10px;
+      letter-spacing: .25em;
+      color: rgba(255, 255, 255, .18);
+      z-index: 8;
+      pointer-events: none;
+      font-weight: 500;
+      text-transform: uppercase;
+      transition: opacity .5s ease;
+    }
+    /* ── Progress dots ── */
+    #progress-dots {
+      position: fixed;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 8;
+      pointer-events: none;
+    }
+    .pdot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .2);
+      transition: background .4s ease, transform .4s var(--ease-spring);
+    }
+    .pdot.active {
+      background: rgba(255, 255, 255, .7);
+      transform: scale(1.6);
+    }
+    /* ── Scroll hint ── */
+    #scroll-hint {
+      position: fixed;
+      bottom: 36px;
+      right: 48px;
+      font-size: 10px;
+      letter-spacing: .2em;
+      color: rgba(255, 255, 255, .18);
+      z-index: 8;
+      pointer-events: none;
+      font-weight: 500;
+      text-transform: uppercase;
+      animation: hintBlink 3s ease-in-out infinite;
+    }
+    @keyframes hintBlink {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: .35;
+      }
+    }
+    /* ── Vignette ── */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0, 0, 0, .82) 100%);
+    }
+    /* ── Particles ── */
+    #particles-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+    }
+    /* ── Glass card ── */
+    #glass-card {
+      position: fixed;
+      width: 300px;
+      height: 200px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 10;
+      opacity: 0;
+      overflow: hidden;
+      will-change: transform, opacity, filter;
+      isolation: isolate;
+    }
+    /* specular highlight */
+    #glass-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      background: linear-gradient(135deg,
+          rgba(255, 255, 255, .22) 0%,
+          rgba(255, 255, 255, .06) 40%,
+          rgba(255, 255, 255, .01) 100%);
+      z-index: 2;
+      pointer-events: none;
+    }
+    /* border + deep shadow */
+    #glass-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, .25);
+      z-index: 3;
+      pointer-events: none;
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, .08) inset,
+        0 40px 100px rgba(0, 0, 0, .75),
+        0 8px 32px rgba(0, 0, 0, .6),
+        0 2px 8px rgba(0, 0, 0, .4);
+    }
+    /* top gloss edge */
+    #glass-gloss {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 40%;
+      border-radius: 20px 20px 0 0;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .1) 0%, transparent 100%);
+      z-index: 4;
+      pointer-events: none;
+      mix-blend-mode: overlay;
+    }
+    #card-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 20px;
+      display: block;
+      filter: saturate(1.15) contrast(1.06);
+      transition: filter .6s ease;
+    }
+    /* shimmer */
+    #shimmer {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      border-radius: 20px;
+      background: linear-gradient(110deg,
+          transparent 25%,
+          rgba(255, 255, 255, .22) 50%,
+          transparent 75%);
+      transform: translateX(-120%);
+      pointer-events: none;
+    }
+    /* noise */
+    #noise-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      border-radius: 20px;
+      opacity: .045;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 160px 160px;
+      pointer-events: none;
+    }
+    /* card label */
+    #card-label {
+      position: absolute;
+      bottom: 14px;
+      left: 16px;
+      right: 16px;
+      z-index: 7;
+      pointer-events: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #card-label-text {
+      font-size: 9px;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, .5);
+      font-weight: 600;
+    }
+    #card-label-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .4);
+      animation: dotPulse 2s ease-in-out infinite;
+    }
+    @keyframes dotPulse {
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      50% {
+        opacity: .4;
+        transform: scale(.6);
+      }
+    }
+    /* ── Ripple ── */
+    .ripple {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9;
+      border: 1px solid rgba(255, 255, 255, .4);
+      transform: translate(-50%, -50%) scale(0);
+      animation: rippleOut .6s var(--ease-out-expo) forwards;
+    }
+    @keyframes rippleOut {
+      to {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0;
+      }
+    }
+    /* ── Custom cursor ── */
+    #cursor-dot {
+      position: fixed;
+      width: 3px;
+      height: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 9999;
+      box-shadow: 0 0 8px rgba(255, 255, 255, .9), 0 0 20px rgba(255, 255, 255, .3);
+      transition: transform .1s ease, background .3s ease;
+    }
+    #cursor-ring {
+      position: fixed;
+      width: 26px;
+      height: 26px;
+      border: 1px solid rgba(255, 255, 255, .45);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 9998;
+      backdrop-filter: blur(2px);
+      background: rgba(255, 255, 255, .025);
+      transition:
+        width .3s var(--ease-spring),
+        height .3s var(--ease-spring),
+        border-color .3s ease,
+        background .3s ease;
+    }
+    #cursor-ring.hovering {
+      width: 35px;
+      height: 35px;
+      border-color: rgba(255, 255, 255, .85);
+      background: rgba(255, 255, 255, .07);
+      mix-blend-mode: difference;
+    }
+    #cursor-ring.clicking {
+      width: 28px;
+      height: 28px;
+      border-color: rgba(255, 255, 255, 1);
+    }
+    /* ── Magnetic trail ── */
+    .trail-dot {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9990;
+      background: rgba(255, 255, 255, .12);
+    }
+  </style>
+</head>
+<body>
+  <div id="aurora">
+    <div class="aurora-blob"
+      style="width:700px;height:500px;background:rgba(60,40,160,.55);top:-180px;left:-180px;animation-duration:32s;animation-delay:0s;opacity:.09">
+    </div>
+    <div class="aurora-blob"
+      style="width:550px;height:400px;background:rgba(30,20,100,.7);top:150px;right:-200px;animation-duration:40s;animation-delay:-15s;opacity:.07">
+    </div>
+    <div class="aurora-blob"
+      style="width:450px;height:350px;background:rgba(80,30,130,.5);bottom:-100px;left:25%;animation-duration:48s;animation-delay:-9s;opacity:.06">
+    </div>
+    <div class="aurora-blob"
+      style="width:300px;height:300px;background:rgba(20,60,120,.4);top:40%;left:10%;animation-duration:55s;animation-delay:-22s;opacity:.05">
+    </div>
+  </div>
+  <div id="glow"></div>
+  <canvas id="canvas-grain"></canvas>
+  <div id="scene">
+    <div id="word-wrapper"></div>
+  </div>
+  <div id="vignette"></div>
+  <div id="particles-layer"></div>
+  <div id="glass-card">
+    <img id="card-img" src="" alt="">
+    <div id="glass-gloss"></div>
+    <div id="shimmer"></div>
+    <div id="noise-overlay"></div>
+    <div id="card-label">
+      <span id="card-label-text">Visual</span>
+      <span id="card-label-dot"></span>
+    </div>
+  </div>
+  <div id="word-counter">01 / 05</div>
+  <div id="word-name">Creative</div>
+  <div id="progress-dots"></div>
+  <div id="scroll-hint">Scroll to explore</div>
+  <div id="cursor-dot"></div>
+  <div id="cursor-ring"></div>
+  <script>
+    // ════════════════════════════════════════════════
+    //  CONFIG
+    // ════════════════════════════════════════════════
+    const WORDS = [
+      { text: 'CREATIVE', label: 'Concept' },
+      { text: 'FUTURE', label: 'Vision' },
+      { text: 'LUXURY', label: 'Craft' },
+      { text: 'DIGITAL', label: 'Medium' },
+      { text: 'MOTION', label: 'Feeling' },
+    ];
+    const IMAGES = [
+      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=700&q=85',
+      'https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=700&q=85',
+      'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=700&q=85',
+      'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=700&q=85',
+      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=700&q=85',
+      'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=700&q=85',
+      'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=700&q=85',
+      'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=700&q=85',
+      'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=700&q=85',
+      'https://images.unsplash.com/photo-1547471080-7cc2caa01a7e?w=700&q=85',
+      'https://images.unsplash.com/photo-1433086966358-54859d0ed716?w=700&q=85',
+      'https://images.unsplash.com/photo-1462275646964-a0e3386b89fa?w=700&q=85',
+      'https://images.unsplash.com/photo-1486870591958-9b9d0d1dda99?w=700&q=85',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=700&q=85',
+      'https://images.unsplash.com/photo-1500099817043-86d46000d58f?w=700&q=85',
+      'https://images.unsplash.com/photo-1465189684280-6a8fa9b19a7a?w=700&q=85',
+      'https://images.unsplash.com/photo-1511300636408-a63a89df3482?w=700&q=85',
+      'https://images.unsplash.com/photo-1498429089284-41f8cf3ffd39?w=700&q=85',
+      'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=700&q=85',
+      'https://images.unsplash.com/photo-1536431311719-398b6704d4cc?w=700&q=85',
+      'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=700&q=85',
+      'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=700&q=85',
+      'https://images.unsplash.com/photo-1455218873509-8097305ee378?w=700&q=85',
+      'https://images.unsplash.com/photo-1504701954957-2010ec3bcec1?w=700&q=85',
+      'https://images.unsplash.com/photo-1448375240586-882707db888b?w=700&q=85',
+    ];
+    // ════════════════════════════════════════════════
+    //  DOM REFS
+    // ════════════════════════════════════════════════
+    const wordWrapper = document.getElementById('word-wrapper');
+    const card = document.getElementById('glass-card');
+    const cardImg = document.getElementById('card-img');
+    const shimmerEl = document.getElementById('shimmer');
+    const dot = document.getElementById('cursor-dot');
+    const ring = document.getElementById('cursor-ring');
+    const pLayer = document.getElementById('particles-layer');
+    const wordCounter = document.getElementById('word-counter');
+    const wordName = document.getElementById('word-name');
+    const progressDots = document.getElementById('progress-dots');
+    const cardLabelTxt = document.getElementById('card-label-text');
+    const canvasGrain = document.getElementById('canvas-grain');
+    const ctxGrain = canvasGrain.getContext('2d');
+    // ════════════════════════════════════════════════
+    //  STATE
+    // ════════════════════════════════════════════════
+    let cx = innerWidth / 2, cy = innerHeight / 2;
+    let rx = cx, ry = cy;
+    let vcx = 0, vcy = 0;
+    let cardX = 0, cardY = 0, tcardX = 0, tcardY = 0;
+    let cardOp = 0, tcardOp = 0;
+    let cardScale = .72, tcardScale = .72;
+    let cardRot = -5, tcardRot = -5;
+    let cardBlur = 16, tcardBlur = 16;
+    let cardBrightness = .5, tcardBrightness = .5;
+    let activeLetterIdx = -1;
+    let cardActive = false;
+    let shimmerRunning = false;
+    let currentWordIdx = 0;
+    let targetWordIdx = 0;
+    let wordTransitioning = false;
+    let letterData = [];
+    let imgIdx = 0;
+    // Magnetic state per letter
+    let letterOffsets = []; // {ox, oy} animated offsets
+    // Trail dots
+    const TRAIL_COUNT = 8;
+    const trailDots = [];
+    const trailPos = [];
+    for (let i = 0; i < TRAIL_COUNT; i++) {
+      trailPos.push({ x: innerWidth / 2, y: innerHeight / 2 });
+      const d = document.createElement('div');
+      d.className = 'trail-dot';
+      const sz = 3 - i * .3;
+      d.style.cssText = `width:${Math.max(sz, 1)}px;height:${Math.max(sz, 1)}px;opacity:${.12 - i * .012}`;
+      document.body.appendChild(d);
+      trailDots.push(d);
+    }
+    // ════════════════════════════════════════════════
+    //  BUILD TYPOGRAPHY
+    // ════════════════════════════════════════════════
+    function buildWord(wordObj, wIdx) {
+      const row = document.createElement('div');
+      row.className = 'word-row';
+      row.dataset.wordIdx = wIdx;
+      [...wordObj.text].forEach((ch, ci) => {
+        const el = document.createElement('span');
+        el.className = 'letter';
+        el.textContent = ch;
+        const lIdx = letterData.length;
+        el.dataset.lIdx = lIdx;
+        letterData.push({
+          el, wordIdx: wIdx, charIdx: ci,
+          imgSrc: IMAGES[(imgIdx++) % IMAGES.length],
+          label: wordObj.label,
+          baseX: 0, baseY: 0, // filled after layout
+        });
+        letterOffsets.push({ ox: 0, oy: 0, tax: 0, tay: 0 });
+        el.addEventListener('mouseenter', () => onLetterEnter(lIdx));
+        el.addEventListener('mouseleave', () => onLetterLeave(lIdx));
+        row.appendChild(el);
+      });
+      return row;
+    }
+    // Only show current word
+    function renderWords() {
+      wordWrapper.innerHTML = '';
+      letterData = [];
+      letterOffsets = [];
+      imgIdx = 0;
+      // Build all words but show only current
+      WORDS.forEach((w, wi) => {
+        const row = buildWord(w, wi);
+        row.style.display = wi === currentWordIdx ? 'flex' : 'none';
+        wordWrapper.appendChild(row);
+      });
+      updateHUD();
+    }
+    // ════════════════════════════════════════════════
+    //  HUD
+    // ════════════════════════════════════════════════
+    function buildProgressDots() {
+      progressDots.innerHTML = '';
+      WORDS.forEach((_, i) => {
+        const d = document.createElement('div');
+        d.className = 'pdot' + (i === currentWordIdx ? ' active' : '');
+        progressDots.appendChild(d);
+      });
+    }
+    function updateHUD() {
+      wordCounter.textContent = `0${currentWordIdx + 1} / 0${WORDS.length}`;
+      wordName.textContent = WORDS[currentWordIdx].label;
+      buildProgressDots();
+    }
+    // ════════════════════════════════════════════════
+    //  WORD TRANSITION (scroll)
+    // ════════════════════════════════════════════════
+    function goToWord(idx) {
+      if (idx < 0 || idx >= WORDS.length || idx === currentWordIdx || wordTransitioning) return;
+      wordTransitioning = true;
+      const dir = idx > currentWordIdx ? 1 : -1;
+      const oldIdx = currentWordIdx;
+      currentWordIdx = idx;
+      // Dismiss card
+      tcardOp = 0; tcardScale = .72; tcardBlur = 16;
+      activeLetterIdx = -1; cardActive = false;
+      ring.classList.remove('hovering');
+      // Animate old word out
+      const allRows = wordWrapper.querySelectorAll('.word-row');
+      const oldRow = allRows[oldIdx];
+      const newRow = allRows[idx];
+      // old exits upward/downward
+      oldRow.style.transition = 'transform .7s cubic-bezier(.76,0,.24,1), opacity .5s ease';
+      oldRow.style.transform = `translateY(${-dir * 80}px)`;
+      oldRow.style.opacity = '0';
+      // new comes in from opposite
+      newRow.style.transition = 'none';
+      newRow.style.transform = `translateY(${dir * 80}px)`;
+      newRow.style.opacity = '0';
+      newRow.style.display = 'flex';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          newRow.style.transition = 'transform .7s cubic-bezier(.76,0,.24,1), opacity .6s ease';
+          newRow.style.transform = 'translateY(0)';
+          newRow.style.opacity = '1';
+        });
+      });
+      setTimeout(() => {
+        oldRow.style.display = 'none';
+        oldRow.style.transition = '';
+        oldRow.style.transform = '';
+        oldRow.style.opacity = '';
+        newRow.style.transition = '';
+        wordTransitioning = false;
+        updateHUD();
+      }, 750);
+      // Refresh letterData to reflect current word's letters
+      rebuildLetterData();
+      updateHUD();
+    }
+    function rebuildLetterData() {
+      // Re-index letterData for current active word
+      const rows = wordWrapper.querySelectorAll('.word-row');
+      letterData = [];
+      letterOffsets = [];
+      imgIdx = currentWordIdx * 5; // offset images per word
+      rows.forEach((row, wi) => {
+        const letters = row.querySelectorAll('.letter');
+        letters.forEach((el, ci) => {
+          const lIdx = letterData.length;
+          el.dataset.lIdx = lIdx;
+          el.onmouseenter = () => onLetterEnter(lIdx);
+          el.onmouseleave = () => onLetterLeave(lIdx);
+          letterData.push({
+            el, wordIdx: wi, charIdx: ci,
+            imgSrc: IMAGES[(imgIdx++) % IMAGES.length],
+            label: WORDS[wi]?.label || '',
+          });
+          letterOffsets.push({ ox: 0, oy: 0, tax: 0, tay: 0 });
+        });
+      });
+    }
+    // ════════════════════════════════════════════════
+    //  SCROLL / WHEEL
+    // ════════════════════════════════════════════════
+    let wheelAcc = 0;
+    document.addEventListener('wheel', e => {
+      e.preventDefault();
+      wheelAcc += e.deltaY;
+      if (wheelAcc > 100) { goToWord(currentWordIdx + 1); wheelAcc = 0; }
+      if (wheelAcc < -100) { goToWord(currentWordIdx - 1); wheelAcc = 0; }
+    }, { passive: false });
+    // Touch
+    let touchStartY = 0;
+    document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; });
+    document.addEventListener('touchend', e => {
+      const dy = touchStartY - e.changedTouches[0].clientY;
+      if (Math.abs(dy) > 50) goToWord(currentWordIdx + (dy > 0 ? 1 : -1));
+    });
+    // Keyboard
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') goToWord(currentWordIdx + 1);
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') goToWord(currentWordIdx - 1);
+    });
+    // ════════════════════════════════════════════════
+    //  CURSOR
+    // ════════════════════════════════════════════════
+    document.addEventListener('mousemove', e => { cx = e.clientX; cy = e.clientY; });
+    document.addEventListener('mousedown', () => ring.classList.add('clicking'));
+    document.addEventListener('mouseup', () => ring.classList.remove('clicking'));
+    // ════════════════════════════════════════════════
+    //  LETTER INTERACTIONS
+    // ════════════════════════════════════════════════
+    function onLetterEnter(idx) {
+      if (!letterData[idx]) return;
+      activeLetterIdx = idx;
+      cardActive = true;
+      ring.classList.add('hovering');
+      const d = letterData[idx];
+      if (cardImg.src !== d.imgSrc) {
+        // Fade out current, swap, fade in
+        cardImg.style.opacity = '0';
+        setTimeout(() => {
+          cardImg.src = d.imgSrc;
+          cardImg.style.opacity = '1';
+        }, 200);
+      }
+      cardLabelTxt.textContent = d.label || 'Visual';
+      tcardOp = 1;
+      tcardScale = 1;
+      tcardRot = (Math.random() - .5) * 7;
+      tcardBlur = 0;
+      tcardBrightness = 1;
+      triggerShimmer();
+      spawnBurst(cx, cy);
+      spawnRipple(cx, cy);
+    }
+    function onLetterLeave(idx) {
+      if (activeLetterIdx !== idx) return;
+      activeLetterIdx = -1;
+      cardActive = false;
+      tcardOp = 0;
+      tcardScale = .76;
+      tcardRot = (Math.random() - .5) * 10;
+      tcardBlur = 16;
+      tcardBrightness = .5;
+      ring.classList.remove('hovering');
+    }
+    // ════════════════════════════════════════════════
+    //  SHIMMER
+    // ════════════════════════════════════════════════
+    function triggerShimmer() {
+      if (shimmerRunning) return;
+      shimmerRunning = true;
+      let p = -120;
+      function step() {
+        p += 3.5;
+        shimmerEl.style.transform = `translateX(${p}%)`;
+        if (p < 220) requestAnimationFrame(step);
+        else { shimmerRunning = false; shimmerEl.style.transform = 'translateX(-120%)'; }
+      }
+      requestAnimationFrame(step);
+    }
+    // ════════════════════════════════════════════════
+    //  RIPPLE
+    // ════════════════════════════════════════════════
+    function spawnRipple(x, y) {
+      const sizes = [50, 90, 140];
+      sizes.forEach((sz, i) => {
+        setTimeout(() => {
+          const r = document.createElement('div');
+          r.className = 'ripple';
+          r.style.cssText = `left:${x}px;top:${y}px;width:${sz}px;height:${sz}px;opacity:${.45 - i * .12}`;
+          document.body.appendChild(r);
+          setTimeout(() => r.remove(), 700);
+        }, i * 70);
+      });
+    }
+    // ════════════════════════════════════════════════
+    //  PARTICLE BURST
+    // ════════════════════════════════════════════════
+    function spawnBurst(x, y) {
+      const count = 20;
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        const ang = (Math.PI * 2 / count) * i + Math.random() * .4;
+        const spd = 25 + Math.random() * 65;
+        const sz = 1.5 + Math.random() * 3.5;
+        const hue = Math.random() > .7 ? `rgba(180,160,255,${.5 + Math.random() * .4})` : `rgba(255,255,255,${.4 + Math.random() * .4})`;
+        p.style.cssText = `position:fixed;width:${sz}px;height:${sz}px;border-radius:50%;background:${hue};left:${x}px;top:${y}px;pointer-events:none;z-index:9;box-shadow:0 0 ${sz * 2}px ${hue}`;
+        pLayer.appendChild(p);
+        const dx = Math.cos(ang) * spd, dy = Math.sin(ang) * spd;
+        let t = 0;
+        (function step() {
+          t += .035;
+          const op = Math.max(0, 1 - t * 1.8);
+          p.style.transform = `translate(calc(-50% + ${dx * t}px), calc(-50% + ${dy * t - 55 * t * t}px))`;
+          p.style.opacity = op;
+          if (t < 1.1) requestAnimationFrame(step);
+          else p.remove();
+        })();
+      }
+    }
+    // ════════════════════════════════════════════════
+    //  FLOATING DUST
+    // ════════════════════════════════════════════════
+    function spawnDust() {
+      const p = document.createElement('div');
+      const x = Math.random() * innerWidth;
+      const sz = .4 + Math.random() * 1.8;
+      const dx = (Math.random() - .5) * 80;
+      const op = .04 + Math.random() * .12;
+      const col = Math.random() > .7 ? `rgba(160,130,255,${op})` : `rgba(255,255,255,${op})`;
+      p.style.cssText = `position:absolute;width:${sz}px;height:${sz}px;border-radius:50%;background:${col};left:${x}px;bottom:-8px;pointer-events:none`;
+      pLayer.appendChild(p);
+      const dur = 9000 + Math.random() * 14000;
+      let start;
+      (function step(ts) {
+        if (!start) start = ts;
+        const prog = (ts - start) / dur;
+        if (prog >= 1) { p.remove(); return; }
+        p.style.transform = `translate(${dx * prog}px, ${-innerHeight * 1.1 * prog}px)`;
+        p.style.opacity = Math.sin(prog * Math.PI) * op * 1.5;
+        requestAnimationFrame(step);
+      })();
+    }
+    setInterval(spawnDust, 350);
+    // ════════════════════════════════════════════════
+    //  MAGNETIC ATTRACTION
+    // ════════════════════════════════════════════════
+    function updateMagnetic() {
+      letterData.forEach((d, i) => {
+        const el = d.el;
+        const rect = el.getBoundingClientRect();
+        const ex = rect.left + rect.width / 2;
+        const ey = rect.top + rect.height / 2;
+        const dist = Math.sqrt((cx - ex) ** 2 + (cy - ey) ** 2);
+        const radius = rect.width * 1.4;
+        const lo = letterOffsets[i];
+        if (dist < radius) {
+          const strength = (1 - dist / radius) * 10;
+          lo.tax = (cx - ex) * strength * .06;
+          lo.tay = (cy - ey) * strength * .06;
+        } else {
+          lo.tax = 0; lo.tay = 0;
+        }
+        lo.ox = lerp(lo.ox, lo.tax, .1);
+        lo.oy = lerp(lo.oy, lo.tay, .1);
+        // Combine magnetic + hover lift
+        el.style.transform = `translate(${lo.ox}px, ${lo.oy}px)`;
+      });
+    }
+    // ════════════════════════════════════════════════
+    //  GRAIN
+    // ════════════════════════════════════════════════
+    function resizeGrain() {
+      canvasGrain.width = innerWidth;
+      canvasGrain.height = innerHeight;
+    }
+    resizeGrain();
+    window.addEventListener('resize', resizeGrain);
+    function drawGrain() {
+      const id = ctxGrain.createImageData(canvasGrain.width, canvasGrain.height);
+      const d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = (Math.random() * 22) | 0;
+        d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 14;
+      }
+      ctxGrain.putImageData(id, 0, 0);
+      setTimeout(drawGrain, 75);
+    }
+    drawGrain();
+    // ════════════════════════════════════════════════
+    //  LERP HELPERS
+    // ════════════════════════════════════════════════
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function lerpAngle(a, b, t) {
+      let d = b - a;
+      while (d > 180) d -= 360;
+      while (d < -180) d += 360;
+      return a + d * t;
+    }
+    // ════════════════════════════════════════════════
+    //  MAIN RAF LOOP
+    // ════════════════════════════════════════════════
+    function tick() {
+      requestAnimationFrame(tick);
+      // ── Cursor
+      const prevRx = rx, prevRy = ry;
+      rx = lerp(rx, cx, .16);
+      ry = lerp(ry, cy, .16);
+      vcx = lerp(vcx, cx - prevRx, .13);
+      vcy = lerp(vcy, cy - prevRy, .13);
+      ring.style.transform = "translate(-50%, -50%)";
+      dot.style.left = cx + "px";
+      dot.style.top = cy + "px";
+      ring.style.left = rx + "px";
+      ring.style.top = ry + "px";
+      ring.style.transform = "translate(-50%, -50%)";
+      // ── Cursor trail
+      trailPos[0] = { x: rx, y: ry };
+      for (let i = 1; i < TRAIL_COUNT; i++) {
+        trailPos[i] = {
+          x: lerp(trailPos[i].x, trailPos[i - 1].x, .35),
+          y: lerp(trailPos[i].y, trailPos[i - 1].y, .35),
+        };
+        trailDots[i].style.left = trailPos[i].x + 'px';
+        trailDots[i].style.top = trailPos[i].y + 'px';
+        trailDots[i].style.transform = 'translate(-50%,-50%)';
+      }
+      // ── Magnetic letters
+      updateMagnetic();
+      // ── Card
+      if (cardActive) {
+        tcardX = cx;
+        tcardY = cy - 120;
+      }
+      cardX = lerp(cardX, tcardX, .07);
+      cardY = lerp(cardY, tcardY, .07);
+      cardOp = lerp(cardOp, tcardOp, .075);
+      cardScale = lerp(cardScale, tcardScale, .1);
+      cardRot = lerpAngle(cardRot, tcardRot, .08);
+      cardBlur = lerp(cardBlur, tcardBlur, .1);
+      cardBrightness = lerp(cardBrightness, tcardBrightness, .1);
+      // Velocity-based tilt
+      const tiltX = vcy * .45;
+      const tiltY = -vcx * .45;
+      // Float bob
+      const floatY = Math.sin(Date.now() * .0012) * 4;
+      card.style.left = (cardX - 150) + 'px';
+      card.style.top = (cardY - 100 + floatY) + 'px';
+      card.style.opacity = cardOp;
+      card.style.transform = `scale(${cardScale}) rotate(${cardRot}deg) perspective(1000px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+      card.style.filter = `blur(${cardBlur}px) brightness(${cardBrightness})`;
+      // ── Subtle aurora parallax
+      const px = (cx / innerWidth - .5) * 28;
+      const py = (cy / innerHeight - .5) * 18;
+      document.getElementById('aurora').style.transform = `translate(${px}px, ${py}px)`;
+    }
+    // ════════════════════════════════════════════════
+    //  INIT
+    // ════════════════════════════════════════════════
+    renderWords();
+    rebuildLetterData();
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>
